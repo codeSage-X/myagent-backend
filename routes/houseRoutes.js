@@ -1,11 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const houseController = require('../controllers/houseController');
-const authMiddleware = require('../middleware/authMiddleware'); // protect()
+const houseController = require('../controllers/houseController'); // Adjust path if needed
 
-router.get('/', houseController.getAllHouses);
-
-// Protected route: only logged-in owners can create houses
-router.post('/', authMiddleware, houseController.createHouse);
+// Example route
+router.post('/', houseController.createHouse);
 
 module.exports = router;
