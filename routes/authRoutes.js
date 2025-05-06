@@ -8,4 +8,10 @@ router.post('/register', register);
 // @route   POST /api/auth/login
 router.post('/login', login);
 
+router.post('/logout', (req, res) => {
+    // Optionally log this on server, but mainly for client to clear token
+    res.status(200).json({ message: 'Successfully logged out' });
+  });
+  
+
 module.exports = router;

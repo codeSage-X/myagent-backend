@@ -12,6 +12,7 @@ exports.getAllHouses = async (req, res) => {
 
 // POST a new house
 exports.createHouse = async (req, res) => {
+  console.log('Request body:', req.body);
   const { title, description, price, address, images } = req.body;
   try {
     const house = new House({
@@ -20,7 +21,7 @@ exports.createHouse = async (req, res) => {
       price,
       address,
       images,
-      ownerId: req.user.id  // Assuming user is authenticated
+      ownerId: req.user.id  // 💥 now this is dynamic!  // Assuming user is authenticated
     });
 
     const saved = await house.save();
