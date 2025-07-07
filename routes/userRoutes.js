@@ -1,9 +1,18 @@
+// routes/user.js
 const express = require('express');
 const router = express.Router();
-const { deleteUserById } = require('../controllers/authController');
+const {
+  getAllUsers,
+  getUserById,
+  editUserById,
+  deleteUserById,
+} = require('../controllers/userController');
 
-// @route   DELETE /api/auth/users/:id
-router.delete('/users/:id', deleteUserById);
+// Base path: /api/users
 
+router.get('/', getAllUsers);               // GET /api/users
+router.get('/:id', getUserById);            // GET /api/users/:id
+router.put('/:id', editUserById);           // PUT /api/users/:id
+router.delete('/:id', deleteUserById);      // DELETE /api/users/:id
 
 module.exports = router;

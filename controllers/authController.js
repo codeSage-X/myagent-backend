@@ -8,43 +8,41 @@ exports.register = async (req, res) => {
   const { name, email, password, isHouseOwner } = req.body;
 
   try {
-    // Check if user exists
     let existingUser = await User.findOne({ email });
     if (existingUser) return res.status(400).json({ msg: 'User already exists' });
 
-    // Create new user
     const user = new User({ name, email, password, isHouseOwner });
 
-    // Generate email verification token
-    const verificationToken = user.generateVerificationToken();
+    // 🔐 Generate a 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
+
+    user.verifyToken = hashedOTP;
+    user.verifyTokenExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
     await user.save();
 
-    // Create email transport
     const transporter = nodemailer.createTransport({
-      service: 'gmail', // Or any other service like SendGrid, Mailgun
+      service: 'gmail',
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
       }
     });
 
-    // Send verification email
-    const verifyURL = `${process.env.CLIENT_URL}/verify-email?token=${verificationToken}&email=${email}`;
-
     await transporter.sendMail({
       from: `"My Agent App" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: 'Verify Your Email',
+      subject: 'Your Email Verification Code',
       html: `
         <p>Hi ${name},</p>
-        <p>Thanks for registering. Please verify your email by clicking the link below:</p>
-        <a href="${verifyURL}">Verify Email</a>
-        <p>This link will expire in 1 hour.</p>
+        <p>Your verification code is:</p>
+        <h2>${otp}</h2>
+        <p>This code will expire in 10 minutes.</p>
       `
     });
 
     res.status(201).json({
-      msg: 'Registration successful. Please check your email to verify your account.'
+      msg: 'Registration successful. Please check your email for the verification code.'
     });
 
   } catch (err) {
@@ -52,7 +50,6 @@ exports.register = async (req, res) => {
     res.status(500).json({ msg: 'Server error' });
   }
 };
-
 exports.login = async (req, res) => {
   const { email, password } = req.body;
 
@@ -100,34 +97,32 @@ exports.login = async (req, res) => {
 
 
 exports.verifyEmail = async (req, res) => {
-  const { token, email } = req.query;
+  const { email, otp } = req.body;
 
-  if (!token || !email) {
-    return res.status(400).json({ msg: 'Missing token or email' });
+  if (!email || !otp) {
+    return res.status(400).json({ msg: 'Email and OTP are required' });
   }
 
   try {
-    // Hash the token received from query
-    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ msg: 'User not found' });
 
-    // Find user with matching hashed token and valid expiry
-    const user = await User.findOne({
-      email,
-      verifyToken: hashedToken,
-      verifyTokenExpires: { $gt: Date.now() }
-    });
-
-    if (!user) {
-      return res.status(400).json({ msg: 'Invalid or expired verification token' });
+    if (!user.verifyTokenExpires || user.verifyTokenExpires < Date.now()) {
+      return res.status(400).json({ msg: 'OTP has expired. Please request a new one.' });
     }
 
-    // Mark user as verified
+    const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
+
+    if (user.verifyToken !== hashedOTP) {
+      return res.status(400).json({ msg: 'Invalid OTP. Please check and try again.' });
+    }
+
     user.isVerified = true;
     user.verifyToken = undefined;
     user.verifyTokenExpires = undefined;
     await user.save();
 
-    return res.status(200).json({ msg: 'Email verified successfully. You can now log in.' });
+    res.status(200).json({ msg: 'Email verified successfully. You can now log in.' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: 'Server error' });
@@ -146,8 +141,19 @@ exports.resendVerificationEmail = async (req, res) => {
       return res.status(400).json({ msg: 'Email already verified' });
     }
 
-    // Generate new verification token
-    const verificationToken = user.generateVerificationToken();
+    // ⏱️ Check if OTP was recently sent (within 60 seconds)
+    if (user.verifyTokenExpires && Date.now() < user.verifyTokenExpires - (9 * 60 * 1000)) {
+      return res.status(429).json({
+        msg: 'OTP already sent recently. Please wait before requesting another.'
+      });
+    }
+
+    // Generate new OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
+
+    user.verifyToken = hashedOTP;
+    user.verifyTokenExpires = Date.now() + 10 * 60 * 1000; // valid for 10 minutes
     await user.save();
 
     const transporter = nodemailer.createTransport({
@@ -158,21 +164,115 @@ exports.resendVerificationEmail = async (req, res) => {
       }
     });
 
-    const verifyURL = `${process.env.CLIENT_URL}/verify-email?token=${verificationToken}&email=${email}`;
+    await transporter.sendMail({
+      from: `"My Agent App" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Your Verification Code (Resent)',
+      html: `
+        <p>Hi ${user.name},</p>
+        <p>Your new verification code is:</p>
+        <h2>${otp}</h2>
+        <p>This code will expire in 10 minutes.</p>
+      `
+    });
+
+    res.status(200).json({ msg: 'Verification code resent successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+};
+
+// FORGOT PASSWORD - Send OTP
+exports.forgotPassword = async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ msg: 'User not found' });
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
+
+    user.resetPasswordToken = hashedOTP;
+    user.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // 10 minutes
+    await user.save();
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
 
     await transporter.sendMail({
       from: `"My Agent App" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: 'Resend: Verify Your Email',
+      subject: 'Reset Your Password',
       html: `
         <p>Hi ${user.name},</p>
-        <p>Please verify your email by clicking the link below:</p>
-        <a href="${verifyURL}">Verify Email</a>
-        <p>This link will expire in 1 hour.</p>
+        <p>Your password reset OTP is:</p>
+        <h2>${otp}</h2>
+        <p>This code will expire in 10 minutes.</p>
       `
     });
 
-    res.status(200).json({ msg: 'Verification email resent successfully' });
+    res.status(200).json({ msg: 'Reset code sent to email' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+};
+
+// RESET PASSWORD with OTP
+exports.resetPassword = async (req, res) => {
+  const { email, otp, newPassword } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ msg: 'User not found' });
+
+    if (!user.resetPasswordExpires || user.resetPasswordExpires < Date.now()) {
+      return res.status(400).json({ msg: 'OTP has expired. Please request a new one.' });
+    }
+
+    const hashedOTP = crypto.createHash('sha256').update(otp).digest('hex');
+
+    if (user.resetPasswordToken !== hashedOTP) {
+      return res.status(400).json({ msg: 'Invalid OTP. Please check and try again.' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    await user.save();
+
+    res.status(200).json({ msg: 'Password reset successful. You can now log in.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+};
+
+// CHANGE PASSWORD (Authenticated)
+exports.changePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  const userId = req.user?.id; // req.user is populated by auth middleware
+
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ msg: 'User not found' });
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) return res.status(400).json({ msg: 'Current password is incorrect' });
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    await user.save();
+
+    res.status(200).json({ msg: 'Password changed successfully' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: 'Server error' });

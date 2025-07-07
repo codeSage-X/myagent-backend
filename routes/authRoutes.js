@@ -1,22 +1,29 @@
 const express = require('express');
 const router = express.Router();
-const { register, login, resendVerificationEmail, verifyEmail } = require('../controllers/authController');
+const {
+  register,
+  login,
+  resendVerificationEmail,
+  verifyEmail,
+  forgotPassword,
+  resetPassword,
+  changePassword
+} = require('../controllers/authController');
 
+const authMiddleware = require('../middleware/authMiddleware');
 
-// @route   POST /api/auth/register
+// Auth routes
 router.post('/register', register);
-
-// @route   POST /api/auth/login
 router.post('/login', login);
-
-// @route   GET /api/auth/verify-email
-router.get('/verify-email', verifyEmail); 
-
+router.get('/verify-email', verifyEmail);
 router.post('/resend-verification', resendVerificationEmail);
-
-// @route   POST /api/auth/logout
 router.post('/logout', (req, res) => {
   res.status(200).json({ message: 'Successfully logged out' });
 });
+
+// New Password Flow
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
+router.post('/change-password', authMiddleware, changePassword);
 
 module.exports = router;
