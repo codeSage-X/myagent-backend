@@ -224,7 +224,6 @@ exports.forgotPassword = async (req, res) => {
     res.status(500).json({ msg: 'Server error' });
   }
 };
-
 // RESET PASSWORD with OTP
 exports.resetPassword = async (req, res) => {
   const { email, otp, newPassword } = req.body;
@@ -243,8 +242,8 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ msg: 'Invalid OTP. Please check and try again.' });
     }
 
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(newPassword, salt);
+    // Set the new password directly and let the pre-save middleware handle hashing
+    user.password = newPassword;
     user.resetPasswordToken = undefined;
     user.resetPasswordExpires = undefined;
     await user.save();
@@ -259,7 +258,7 @@ exports.resetPassword = async (req, res) => {
 // CHANGE PASSWORD (Authenticated)
 exports.changePassword = async (req, res) => {
   const { currentPassword, newPassword } = req.body;
-  const userId = req.user?.id; // req.user is populated by auth middleware
+  const userId = req.user?.id;
 
   try {
     const user = await User.findById(userId);
@@ -268,8 +267,8 @@ exports.changePassword = async (req, res) => {
     const isMatch = await bcrypt.compare(currentPassword, user.password);
     if (!isMatch) return res.status(400).json({ msg: 'Current password is incorrect' });
 
-    const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(newPassword, salt);
+    // Set the new password directly and let the pre-save middleware handle hashing
+    user.password = newPassword;
     await user.save();
 
     res.status(200).json({ msg: 'Password changed successfully' });
