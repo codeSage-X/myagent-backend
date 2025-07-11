@@ -277,3 +277,26 @@ exports.changePassword = async (req, res) => {
     res.status(500).json({ msg: 'Server error' });
   }
 };
+
+// Updated logout function
+exports.logout = async (req, res) => {
+  try {
+    const token = req.header('Authorization')?.split(' ')[1];
+    if (!token) return res.status(400).json({ msg: 'No token provided' });
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    // Add token to blacklist
+    await BlacklistedToken.create({
+      token: token,
+      expiresAt: new Date(decoded.exp * 1000)
+    });
+
+    res.status(200).json({ msg: 'Successfully logged out' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error' });
+  }
+};
+
+
