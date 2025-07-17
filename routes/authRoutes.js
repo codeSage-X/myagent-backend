@@ -7,7 +7,11 @@ const {
   verifyEmail,
   forgotPassword,
   resetPassword,
-  changePassword
+  changePassword,
+  googleAuth,
+  googleCallback,
+  addPassword,
+  linkGoogleAccount
 } = require('../controllers/authController');
 
 const authMiddleware = require('../middleware/authMiddleware');
@@ -27,5 +31,13 @@ router.post('/logout', (req, res) => {
 router.post('/forgot-password', passwordResetLimiter, forgotPassword);
 router.post('/reset-password', passwordResetLimiter, resetPassword);
 router.post('/change-password', passwordResetLimiter, authMiddleware, changePassword);
+
+// Google OAuth routes
+router.get('/google', googleAuth);
+router.get('/google/callback', googleCallback);
+
+// Account management routes
+router.post('/add-password', authMiddleware, addPassword);
+router.post('/link-google', linkGoogleAccount);
 
 module.exports = router;
